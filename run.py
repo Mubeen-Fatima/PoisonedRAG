@@ -1,28 +1,32 @@
 import os
+import subprocess
+import sys
 
 def run(test_params):
 
     log_file, log_name = get_log_name(test_params)
 
-    cmd = f"nohup python3 -u main.py \
-        --eval_model_code {test_params['eval_model_code']}\
-        --eval_dataset {test_params['eval_dataset']}\
-        --split {test_params['split']}\
-        --query_results_dir {test_params['query_results_dir']}\
-        --model_name {test_params['model_name']}\
-        --top_k {test_params['top_k']}\
-        --use_truth {test_params['use_truth']}\
-        --gpu_id {test_params['gpu_id']}\
-        --attack_method {test_params['attack_method']}\
-        --adv_per_query {test_params['adv_per_query']}\
-        --score_function {test_params['score_function']}\
-        --repeat_times {test_params['repeat_times']}\
-        --M {test_params['M']}\
-        --seed {test_params['seed']}\
-        --name {log_name}\
-        > {log_file} &"
-        
-    os.system(cmd)
+    cmd = [
+        sys.executable, "-u", "main.py",
+        "--eval_model_code", str(test_params['eval_model_code']),
+        "--eval_dataset", str(test_params['eval_dataset']),
+        "--split", str(test_params['split']),
+        "--query_results_dir", str(test_params['query_results_dir']),
+        "--model_name", str(test_params['model_name']),
+        "--top_k", str(test_params['top_k']),
+        "--use_truth", str(test_params['use_truth']),
+        "--gpu_id", str(test_params['gpu_id']),
+        "--attack_method", str(test_params['attack_method']),
+        "--adv_per_query", str(test_params['adv_per_query']),
+        "--score_function", str(test_params['score_function']),
+        "--repeat_times", str(test_params['repeat_times']),
+        "--M", str(test_params['M']),
+        "--seed", str(test_params['seed']),
+        "--name", log_name,
+    ]
+
+    with open(log_file, "w", encoding="utf-8") as file:
+        subprocess.Popen(cmd, stdout=file, stderr=subprocess.STDOUT)
 
 
 def get_log_name(test_params):
@@ -52,22 +56,22 @@ test_params = {
     'query_results_dir': 'main',
 
     # LLM setting
-    'model_name': 'palm2', 
+    'model_name': 'openrouter_gpt4',
     'use_truth': False,
     'top_k': 5,
     'gpu_id': 0,
 
     # attack
-    'attack_method': 'LM_targeted',
+    'attack_method': None,
     'adv_per_query': 5,
     'score_function': 'dot',
-    'repeat_times': 10,
-    'M': 10,
+    'repeat_times': 1,
+    'M': 1,
     'seed': 12,
 
     'note': None
 }
 
-for dataset in ['nq', 'hotpotqa', 'msmarco']:
+for dataset in ['nq']:
     test_params['eval_dataset'] = dataset
     run(test_params)

@@ -1,15 +1,11 @@
 import sys, os
-from .contriever_src.contriever import Contriever
-from beir import util
+from urllib.request import urlretrieve
+from zipfile import ZipFile
 from beir.datasets.data_loader import GenericDataLoader
 import json
 import numpy as np
 from collections import defaultdict
 import random
-import torch
-from transformers import AutoTokenizer
-
-from sentence_transformers import SentenceTransformer
 
 model_code_to_qmodel_name = {
     "contriever": "facebook/contriever",
@@ -36,12 +32,15 @@ def ance_get_emb(model, input):
 def load_models(model_code):
     assert (model_code in model_code_to_qmodel_name and model_code in model_code_to_cmodel_name), f"Model code {model_code} not supported!"
     if 'contriever' in model_code:
+        from .contriever_src.contriever import Contriever
+        from transformers import AutoTokenizer
         model = Contriever.from_pretrained(model_code_to_qmodel_name[model_code])
         assert model_code_to_cmodel_name[model_code] == model_code_to_qmodel_name[model_code]
         c_model = model
         tokenizer = AutoTokenizer.from_pretrained(model_code_to_qmodel_name[model_code])
         get_emb = contriever_get_emb
     elif 'ance' in model_code:
+        from sentence_transformers import SentenceTransformer
         model = SentenceTransformer(model_code_to_qmodel_name[model_code])
         assert model_code_to_cmodel_name[model_code] == model_code_to_qmodel_name[model_code]
         c_model = model
@@ -59,7 +58,12 @@ def load_beir_datasets(dataset_name, split):
     out_dir = os.path.join(os.getcwd(), "datasets")
     data_path = os.path.join(out_dir, dataset_name)
     if not os.path.exists(data_path):
-        data_path = util.download_and_unzip(url, out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        zip_path = os.path.join(out_dir, f"{dataset_name}.zip")
+        urlretrieve(url, zip_path)
+        with ZipFile(zip_path) as dataset_zip:
+            dataset_zip.extractall(out_dir)
+        os.remove(zip_path)
     print(data_path)
 
     data = GenericDataLoader(data_path)
@@ -108,7 +112,11 @@ def setup_seeds(seed):
     # seed = config.run_cfg.seed + get_rank()
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+    except ImportError:
+        pass
 
 def clean_str(s):
     try:

@@ -7,9 +7,7 @@ import numpy as np
 from src.models import create_model
 from src.utils import load_beir_datasets, load_models
 from src.utils import save_results, load_json, setup_seeds, clean_str, f1_score
-from src.attack import Attacker
 from src.prompts import wrap_prompt
-import torch
 
 
 
@@ -45,8 +43,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    torch.cuda.set_device(args.gpu_id)
-    device = 'cuda'
     setup_seeds(args.seed)
     if args.model_config_path == None:
         args.model_config_path = f'model_configs/{args.model_name}_config.json'
@@ -72,6 +68,13 @@ def main():
         args.attack_method = None
 
     if args.attack_method not in [None, 'None']:
+        import torch
+        from src.attack import Attacker
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("Attack mode requires CUDA. Use --attack_method None for API-only OpenRouter runs.")
+        torch.cuda.set_device(args.gpu_id)
+        device = 'cuda'
         # Load retrieval models
         model, c_model, tokenizer, get_emb = load_models(args.eval_model_code)
         model.eval()
@@ -163,6 +166,9 @@ def main():
 
                     cnt_from_adv=sum([i in adv_text_set for i in topk_contents])
                     ret_sublist.append(cnt_from_adv)
+                else:
+                    topk_contents = [result["context"] for result in topk_results[:args.top_k]]
+                    adv_text_set = set()
                 query_prompt = wrap_prompt(question, topk_contents, prompt_id=4)
 
                 response = llm.query(query_prompt)
@@ -194,21 +200,27 @@ def main():
 
     asr = np.array(asr_list) / args.M
     asr_mean = round(np.mean(asr), 2)
-    ret_precision_array = np.array(ret_list) / args.top_k
-    ret_precision_mean=round(np.mean(ret_precision_array), 2)
-    ret_recall_array = np.array(ret_list) / args.adv_per_query
-    ret_recall_mean=round(np.mean(ret_recall_array), 2)
+    if args.attack_method not in [None, 'None']:
+        ret_precision_array = np.array(ret_list) / args.top_k
+        ret_precision_mean=round(np.mean(ret_precision_array), 2)
+        ret_recall_array = np.array(ret_list) / args.adv_per_query
+        ret_recall_mean=round(np.mean(ret_recall_array), 2)
 
-    ret_f1_array=f1_score(ret_precision_array, ret_recall_array)
-    ret_f1_mean=round(np.mean(ret_f1_array), 2)
+        ret_f1_array=f1_score(ret_precision_array, ret_recall_array)
+        ret_f1_mean=round(np.mean(ret_f1_array), 2)
+    else:
+        ret_precision_mean = ret_recall_mean = ret_f1_mean = None
   
     print(f"ASR: {asr}")
     print(f"ASR Mean: {asr_mean}\n") 
 
-    print(f"Ret: {ret_list}")
-    print(f"Precision mean: {ret_precision_mean}")
-    print(f"Recall mean: {ret_recall_mean}")
-    print(f"F1 mean: {ret_f1_mean}\n")
+    if args.attack_method not in [None, 'None']:
+        print(f"Ret: {ret_list}")
+        print(f"Precision mean: {ret_precision_mean}")
+        print(f"Recall mean: {ret_recall_mean}")
+        print(f"F1 mean: {ret_f1_mean}\n")
+    else:
+        print("Retrieval attack metrics skipped because attack_method is None.\n")
 
     print(f"Ending...")
 
