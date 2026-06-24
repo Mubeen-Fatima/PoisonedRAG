@@ -62,11 +62,11 @@ test_params = {
     'gpu_id': 0,
 
     # attack
-    'attack_method': None,
+    'attack_method': 'LM_targeted',
     'adv_per_query': 5,
     'score_function': 'dot',
-    'repeat_times': 1,
-    'M': 1,
+    'repeat_times': 10,
+    'M': 10,
     'seed': 12,
 
     'note': None

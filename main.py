@@ -68,24 +68,30 @@ def main():
         args.attack_method = None
 
     if args.attack_method not in [None, 'None']:
-        import torch
-        from src.attack import Attacker
+        if args.attack_method == 'LM_targeted':
+            # LM_targeted uses pre-generated adversarial texts — no GPU/Contriever needed
+            from src.attack import Attacker
+            attacker = Attacker(args)
+            device = 'cpu'
+            model = c_model = tokenizer = get_emb = None
+        else:
+            import torch
+            from src.attack import Attacker
 
-        if not torch.cuda.is_available():
-            raise RuntimeError("Attack mode requires CUDA. Use --attack_method None for API-only OpenRouter runs.")
-        torch.cuda.set_device(args.gpu_id)
-        device = 'cuda'
-        # Load retrieval models
-        model, c_model, tokenizer, get_emb = load_models(args.eval_model_code)
-        model.eval()
-        model.to(device)
-        c_model.eval()
-        c_model.to(device) 
-        attacker = Attacker(args,
-                            model=model,
-                            c_model=c_model,
-                            tokenizer=tokenizer,
-                            get_emb=get_emb) 
+            if not torch.cuda.is_available():
+                raise RuntimeError(f"Attack method '{args.attack_method}' requires CUDA (GPU). Use 'LM_targeted' for a GPU-free attack.")
+            torch.cuda.set_device(args.gpu_id)
+            device = 'cuda'
+            model, c_model, tokenizer, get_emb = load_models(args.eval_model_code)
+            model.eval()
+            model.to(device)
+            c_model.eval()
+            c_model.to(device)
+            attacker = Attacker(args,
+                                model=model,
+                                c_model=c_model,
+                                tokenizer=tokenizer,
+                                get_emb=get_emb)
     
     llm = create_model(args.model_config_path)
 
@@ -109,10 +115,15 @@ def main():
             adv_text_groups = attacker.get_attack(target_queries)
             adv_text_list = sum(adv_text_groups, []) # convert 2D array to 1D array
 
-            adv_input = tokenizer(adv_text_list, padding=True, truncation=True, return_tensors="pt")
-            adv_input = {key: value.cuda() for key, value in adv_input.items()}
-            with torch.no_grad():
-                adv_embs = get_emb(c_model, adv_input)        
+            # LM_targeted runs without GPU — embeddings computed only for hotflip
+            if device != 'cpu':
+                import torch
+                adv_input = tokenizer(adv_text_list, padding=True, truncation=True, return_tensors="pt")
+                adv_input = {key: value.cuda() for key, value in adv_input.items()}
+                with torch.no_grad():
+                    adv_embs = get_emb(c_model, adv_input)
+            else:
+                adv_embs = None
                       
         asr_cnt=0
         ret_sublist=[]
@@ -144,27 +155,32 @@ def main():
                 topk_idx = list(results[incorrect_answers[i]['id']].keys())[:args.top_k]
                 topk_results = [{'score': results[incorrect_answers[i]['id']][idx], 'context': corpus[idx]['text']} for idx in topk_idx]               
 
-                if args.attack_method not in [None, 'None']: 
-                    query_input = tokenizer(question, padding=True, truncation=True, return_tensors="pt")
-                    query_input = {key: value.cuda() for key, value in query_input.items()}
-                    with torch.no_grad():
-                        query_emb = get_emb(model, query_input) 
-                    for j in range(len(adv_text_list)):
-                        adv_emb = adv_embs[j, :].unsqueeze(0) 
-                        # similarity     
-                        if args.score_function == 'dot':
-                            adv_sim = torch.mm(adv_emb, query_emb.T).cpu().item()
-                        elif args.score_function == 'cos_sim':
-                            adv_sim = torch.cosine_similarity(adv_emb, query_emb).cpu().item()
-                                               
-                        topk_results.append({'score': adv_sim, 'context': adv_text_list[j]})
-                    
-                    topk_results = sorted(topk_results, key=lambda x: float(x['score']), reverse=True)
-                    topk_contents = [topk_results[j]["context"] for j in range(args.top_k)]
-                    # tracking the num of adv_text in topk
+                if args.attack_method not in [None, 'None']:
                     adv_text_set = set(adv_text_groups[iter_idx])
 
-                    cnt_from_adv=sum([i in adv_text_set for i in topk_contents])
+                    if adv_embs is not None:
+                        # GPU path: rank adversarial texts by embedding similarity
+                        import torch
+                        query_input = tokenizer(question, padding=True, truncation=True, return_tensors="pt")
+                        query_input = {key: value.cuda() for key, value in query_input.items()}
+                        with torch.no_grad():
+                            query_emb = get_emb(model, query_input)
+                        for j in range(len(adv_text_list)):
+                            adv_emb = adv_embs[j, :].unsqueeze(0)
+                            if args.score_function == 'dot':
+                                adv_sim = torch.mm(adv_emb, query_emb.T).cpu().item()
+                            elif args.score_function == 'cos_sim':
+                                adv_sim = torch.cosine_similarity(adv_emb, query_emb).cpu().item()
+                            topk_results.append({'score': adv_sim, 'context': adv_text_list[j]})
+                        topk_results = sorted(topk_results, key=lambda x: float(x['score']), reverse=True)
+                    else:
+                        # CPU path (LM_targeted): inject adversarial texts directly at top
+                        # These texts are pre-crafted to be retrieved, so direct injection is valid
+                        adv_entries = [{'score': 999.0, 'context': t} for t in adv_text_groups[iter_idx]]
+                        topk_results = adv_entries + topk_results
+
+                    topk_contents = [topk_results[j]["context"] for j in range(args.top_k)]
+                    cnt_from_adv = sum([t in adv_text_set for t in topk_contents])
                     ret_sublist.append(cnt_from_adv)
                 else:
                     topk_contents = [result["context"] for result in topk_results[:args.top_k]]

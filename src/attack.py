@@ -1,5 +1,3 @@
-from sentence_transformers import SentenceTransformer
-import torch
 import random
 from tqdm import tqdm
 from src.utils import load_json
@@ -23,15 +21,13 @@ class GradientStorage:
 
 def get_embeddings(model):
     """Returns the wordpiece embedding module."""
-    # base_model = getattr(model, config.model_type)
-    # embeddings = base_model.embeddings.word_embeddings
-
-    # This can be different for different models; the following is tested for Contriever
-    if isinstance(model, SentenceTransformer):
-        embeddings = model[0].auto_model.embeddings.word_embeddings
-    else:
-        embeddings = model.embeddings.word_embeddings
-    return embeddings
+    try:
+        from sentence_transformers import SentenceTransformer
+        if isinstance(model, SentenceTransformer):
+            return model[0].auto_model.embeddings.word_embeddings
+    except ImportError:
+        pass
+    return model.embeddings.word_embeddings
 
 def hotflip_attack(averaged_grad,
                    embedding_matrix,
@@ -39,6 +35,7 @@ def hotflip_attack(averaged_grad,
                    num_candidates=1,
                    filter=None):
     """Returns the top candidate replacements."""
+    import torch
     with torch.no_grad():
         gradient_dot_embedding_matrix = torch.matmul(
             embedding_matrix,

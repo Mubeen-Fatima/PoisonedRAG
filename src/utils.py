@@ -1,7 +1,10 @@
 import sys, os
 from urllib.request import urlretrieve
 from zipfile import ZipFile
-from beir.datasets.data_loader import GenericDataLoader
+try:
+    from beir.datasets.data_loader import GenericDataLoader
+except ImportError:
+    from .beir_loader import GenericDataLoader
 import json
 import numpy as np
 from collections import defaultdict
