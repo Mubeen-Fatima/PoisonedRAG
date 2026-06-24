@@ -1,4 +1,5 @@
 import os
+import time
 from openai import OpenAI
 from .Model import Model
 
@@ -32,8 +33,11 @@ class GPT(Model):
             base_url=base_url,
             default_headers=default_headers,
         )
+        # delay in seconds between API calls (avoids rate limiting)
+        self.request_delay = float(config["params"].get("request_delay", 2.0))
 
     def query(self, msg):
+        time.sleep(self.request_delay)
         try:
             completion = self.client.chat.completions.create(
                 model=self.name,
@@ -45,9 +49,9 @@ class GPT(Model):
                 ],
             )
             response = completion.choices[0].message.content
-           
+
         except Exception as e:
-            print(e)
+            print(f"API Error: {e}")
             response = ""
 
         return response

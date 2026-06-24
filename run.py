@@ -56,7 +56,7 @@ test_params = {
     'query_results_dir': 'main',
 
     # LLM setting
-    'model_name': 'openrouter_gpt4',
+    'model_name': 'openai_gpt4o',
     'use_truth': False,
     'top_k': 5,
     'gpu_id': 0,
@@ -65,11 +65,11 @@ test_params = {
     'attack_method': 'LM_targeted',
     'adv_per_query': 5,
     'score_function': 'dot',
-    'repeat_times': 10,
+    'repeat_times': 5,
     'M': 10,
     'seed': 12,
 
-    'note': None
+    'note': 'run_50q'
 }
 
 for dataset in ['nq']:

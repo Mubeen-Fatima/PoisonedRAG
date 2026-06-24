@@ -18,6 +18,7 @@
         "temperature":0.1,
         "seed":100,
         "gpus":[],
-        "max_output_tokens":150
+        "max_output_tokens":150,
+        "request_delay": 3.0
     }
 }
